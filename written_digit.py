@@ -120,8 +120,9 @@ def test(testloader: torch.utils.data.DataLoader, model: torch.nn.Module, device
             # forward pass
             outputs = model(images)
             # get the predicted digit based on the max value in the output-list of class scores
-            _, predicted = torch.max(outputs.data, 1)
-            # count total number of images
+            # index of the largest value in outputs.data (dims=1x10) along its 2nd dimension
+            _, predicted = torch.max(outputs.data, dim=1)
+            # count total number of images (size of first dim of labels tensor)
             total += labels.size(0)
             # count number of correctly predicted images
             # correct_bool_tensor: torch.Tensor = (predicted == labels.to(device))
@@ -178,17 +179,18 @@ def train_run_test():
 # Load a digit image from a file and make a digit prediction
 def inference(model_weights_file: str, image_tensor: torch.Tensor):
     device: torch.device
-    model_pt: torch.nn.Module
+    model: torch.nn.Module
 
     device = enable_cuda()
-    model_pt = Net().to(device)
-    model_pt.load_state_dict(torch.load(model_weights_file))
+    model = Net().to(device)
+    model.load_state_dict(torch.load(model_weights_file))
 
-    model_pt.eval()  # Set the model to evaluation mode
+    model.eval()  # Set the model to evaluation mode
     with torch.no_grad():
         image_tensor = image_tensor.to(device)
-        output = model_pt(image_tensor)
-        _, predicted = torch.max(output.data, 1)
+        output = model(image_tensor)
+        # index of the largest value in output.data (dims=1x10) along its 2nd dimension
+        _, predicted = torch.max(output.data, dim=1)
         print(f'Predicted digit: {predicted.item()}')
 
 ######
@@ -201,7 +203,7 @@ def inference(model_weights_file: str, image_tensor: torch.Tensor):
 #     inference('model_weights.pth')
 
 if __name__ == "__main__":
-    image_tensor: torch.Tensor = load_image('digit7.png')
+    image_tensor: torch.Tensor = load_image('digit.png')
     inference('model_weights.pth', image_tensor)
 
 # if __name__ == "__main__":
