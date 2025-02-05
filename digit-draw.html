@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Draw Digit</title>
+    <style>
+        #canvas {
+            border: 1px solid black;
+            width: 280px;
+            height: 280px;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="canvas" width="280" height="280"></canvas>
+    <button id="saveButton">Save</button>
+
+    <script>
+    var canvas = document.getElementById('canvas');
+    var ctx = canvas.getContext('2d');
+    var isDrawing = false;
+    var cellSize = canvas.width / 28;
+    var prevX = 0;
+    var prevY = 0;
+
+    function drawLine(x1, y1, x2, y2) {
+        var dx = Math.abs(x2 - x1);
+        var dy = Math.abs(y2 - y1);
+        var sx = (x1 < x2) ? 1 : -1;
+        var sy = (y1 < y2) ? 1 : -1;
+        var err = dx - dy;
+
+        while(true){
+            ctx.fillStyle = '#000';
+            ctx.fillRect(x1 * cellSize, y1 * cellSize, cellSize, cellSize);
+
+            if ((x1 === x2) && (y1 === y2)) break;
+            var e2 = 2 * err;
+            if (e2 > -dy) { err -= dy; x1 += sx; }
+            if (e2 < dx) { err += dx; y1 += sy; }
+        }
+    }
+
+    canvas.addEventListener('mousedown', function(e) {
+        isDrawing = true;
+        prevX = Math.floor((e.clientX - canvas.offsetLeft) / cellSize);
+        prevY = Math.floor((e.clientY - canvas.offsetTop) / cellSize);
+        ctx.fillStyle = '#000';
+        ctx.fillRect(prevX * cellSize, prevY * cellSize, cellSize, cellSize);
+    });
+
+    canvas.addEventListener('mousemove', function(e) {
+        if (!isDrawing) return;
+        var x = Math.floor((e.clientX - canvas.offsetLeft) / cellSize);
+        var y = Math.floor((e.clientY - canvas.offsetTop) / cellSize);
+        drawLine(prevX, prevY, x, y);
+        prevX = x;
+        prevY = y;
+    });
+
+    canvas.addEventListener('mouseup', function() {
+        isDrawing = false;
+    });
+
+    document.getElementById('saveButton').addEventListener('click', function() {
+        var tempCanvas = document.createElement('canvas');
+        tempCanvas.width = 28;
+        tempCanvas.height = 28;
+        tempCanvas.getContext('2d').drawImage(canvas, 0, 0, 28, 28);
+        var dataUrl = tempCanvas.toDataURL('image/png');
+        var a = document.createElement('a');
+        a.href = dataUrl;
+        a.download = 'digit.png';
+        a.click();
+    });
+    </script>
+</body>
+</html>
