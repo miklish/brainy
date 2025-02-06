@@ -91,6 +91,8 @@ def train(
             # We have to do this because for some reason pytorch accumulates gradients across mini-batches by default
             # NOTE: We have to accumulate and then average gradients across all inputs in the same mini-batch,
             #       but not *across* different mini-batches
+            # CORRECTION: We don't average gradients... We average the loss, and perform a single gradient descent 
+            #             update per mini-batch with respect to the averaged loss
             optimizer.zero_grad()
             # calculate the loss for each element, then average to et a single scalar loss
             loss = criterion(outputs, labels)
