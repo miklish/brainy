@@ -1,6 +1,6 @@
 import torch
 import torchvision
-from written_digit_image import load_image
+#from written_digit_image import load_image
 
 # GReLU
 def grelu(x) -> torch.Tensor:
@@ -27,7 +27,7 @@ def enable_cuda() -> torch.device:
 #   model = Net().to(device) # puts this on GPU if available
 # Calling
 #   outputs = model(inputs)
-# wil automatically run the forward pass and also setup the accumulation of gradients in each batch
+# wil automatically run the forward pass
 # Do not call forward() directly
 #
 class Net(torch.nn.Module):
@@ -75,14 +75,15 @@ def train(
 
     # TRAIN
     # Loop over the entire dataset (an epoch) multiple times (multiple epochs)
-    for epoch in range(1):
+    for epoch in range(EPOCHS):
         # For each mini-batch of images and labels...
         # this gives us the 'stocahstic' part of 'stochastic gradient descent'... its the random selection of mini-batches
         # due to the "shuffle=True" parameter in the DataLoader
         for i, data in enumerate(trainloader, 0):
             # get the inputs -- data is a list of [inputs, labels]
             # NOTE: we make sure we tell pytorch what device to put our raw data on
-            inputs, labels = data[0].to(device), data[1].to(device)
+            inputs = data[0].to(device)
+            labels = data[1].to(device)
 
             # forward pass: compute predicted digits by passing inputs to the model
             outputs = model(inputs)
@@ -94,11 +95,27 @@ def train(
             # CORRECTION: We don't average gradients... We average the loss, and perform a single gradient descent 
             #             update per mini-batch with respect to the averaged loss
             optimizer.zero_grad()
+
             # calculate the loss for each element, then average to et a single scalar loss
             loss = criterion(outputs, labels)
+
+            # L1 REGULARIZATION
+            # p refers to each parameter tensor in the model, which includes the 4 tensors:
+            #   model.parameters() = [self.fc1.weight, self.fc1.bias, self.fc2.weight,and self.fc2.bias]
+            # l1_norm = sum(p.abs().sum() for p in model.parameters())
+            # loss = loss + l1_lambda * l1_norm
+
+            # L2 REGULARIZATION
+            l2_lambda = 0.0001
+            # p refers to each parameter tensor in the model, which includes the 4 tensors:
+            #   model.parameters() = [self.fc1.weight, self.fc1.bias, self.fc2.weight,and self.fc2.bias]
+            l2_norm = sum(p.pow(2.0).sum() for p in model.parameters())
+            loss = loss + l2_lambda * l2_norm
+
             # backward pass: compute gradient of the scalar loss with respect to model node values (parameters)
             # this is the backpropagation step -- this is not technically 'gradient descent'
             loss.backward()
+
             # performs the gradient descent (e.g.: updates the weights by taking a step in the direction of the gradient)
             # NOTE: in pytorch they often refer to the partial derivatives of the loss with respect to each parameter
             # as a 'gradient', and therefore may talk of the 'gradients' (plural), even though there is really only one
@@ -124,7 +141,7 @@ def test(testloader: torch.utils.data.DataLoader, model: torch.nn.Module, device
             # get the predicted digit based on the max value in the output-list of class scores
             # index of the largest value in outputs.data (dims=1x10) along its 2nd dimension
             _, predicted = torch.max(outputs.data, dim=1)
-            # count total number of images (size of first dim of labels tensor)
+            # count total number of images (size of 1st dimension of labels tensor)
             total += labels.size(0)
             # count number of correctly predicted images
             # correct_bool_tensor: torch.Tensor = (predicted == labels.to(device))
@@ -133,6 +150,16 @@ def test(testloader: torch.utils.data.DataLoader, model: torch.nn.Module, device
 
     # print accuracy of the model
     print('Accuracy of the network on the 10000 test images: %d %%' % (100 * correct / total))
+
+# GAUSSIAN NOISE FUNCTION (per pixel)
+# class AddGaussianNoise:
+#     def __init__(self, mean=0.0, std=0.1):
+#         self.mean = mean
+#         self.std = std
+#
+#     # the __call__ method allows an instance of a class to be called like a function
+#     def __call__(self, tensor):
+#         return tensor + torch.randn(tensor.size()) * self.std + self.mean
 
 def train_run_test():
     transform: torchvision.transforms.Compose
@@ -150,6 +177,11 @@ def train_run_test():
 
     # Define a transform to convert the data to tensor
     transform = torchvision.transforms.Compose([torchvision.transforms.ToTensor()])
+
+    # ADD NOISE TO INPUT
+    # transform = torchvision.transforms.Compose(
+    #     [torchvision.transforms.ToTensor(),
+    #      AddGaussianNoise(0.0, 0.05)])
 
     # Download and load the MNIST training dataset (this is auto-cached so only downloads once)
     # Apply the transform when loading the data
@@ -197,16 +229,24 @@ def inference(model_weights_file: str, image_tensor: torch.Tensor):
 
 ######
 
-# if __name__ == "__main__":
-#     model: torch.nn.Module = train_run_test()
-#     torch.save(model.state_dict(), 'model_weights.pth')
+model_version = "1.0.2"
+global l1_lambda
+l1_lambda = 0.00005
+EPOCHS = 5
 
-# if __name__ == "__main__":
-#     inference('model_weights.pth')
+def model_weights_file() -> str:
+    return 'model_weights-' + model_version + '.pth'
 
 if __name__ == "__main__":
-    image_tensor: torch.Tensor = load_image('digit.png')
-    inference('model_weights.pth', image_tensor)
+    model: torch.nn.Module = train_run_test()
+    torch.save(model.state_dict(), model_weights_file())
+
+# if __name__ == "__main__":
+#     inference('model_weights-1.0.0.pth')
+
+# if __name__ == "__main__":
+#     image_tensor: torch.Tensor = load_image('digit.png')
+#     inference('model_weights-1.0.0.pth', image_tensor)
 
 # if __name__ == "__main__":
 #     compare_mnist_user_imgs()
