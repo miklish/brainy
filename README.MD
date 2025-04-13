@@ -1,9 +1,9 @@
 # Brainy
 Brainy isn't too smart yet
 
-<div style="text-align: center">
+<p align="center">
   <img src="brainy01.webp" alt="Brainy" style="width: 640px;">
-</div>
+</p>
 
 # MoE Brainy
 Converting Brainy to a Mixture of Experts model introduced a lot of unexpected twists and turns.
@@ -24,7 +24,11 @@ However, there are 4 fatal flaws with this approach. Understanding the 4 fatal f
 >
 > A neural network is a big network of numbers that you add subtract and multiply with the hope that -- at the end -- you get a resulting number that represents a correct prediction for whatever problem you're trying to solve. For an LLM, the prediction is the correct next word in a sentence. In the case of Brainy, this is just a correct prediction of what hand-written digit a particular image is.
 >
-> During **Training**, you feed your example images into the network. Its important to note that each image Brainy uses is 'labelled' -- meaning that each image is paired with the a correct answer (this is called "Supervised Learning"). After the image is fed in (say, a hand-written "0"), we can then check whether Brainy made the correct prediction. If Brainy is wrong (e.g.: it thought a "0" was a "1"), we make a determination of *how wrong* it was, and then use techniques to adjust Brainy's network of numbers (based on how wrong Brainy was) so that it will do better the next time. This is a delicate process, because we don't want to adjust Brainy's parameters in a way that cause it to predict hand-written 0's better, but make it predict hand-written 1's worse. It must be done in a way that makes ALL predictions better. This "holistic" update technique is called "gradient descent", and its how the network "learns" to make better predictions overall.
+> During **Training**, you feed your example images into the network. Its important to note that each image Brainy uses is 'labelled' -- meaning that each image is paired with the a correct answer (this is called "Supervised Learning").
+>
+>After the image is fed in (say, a hand-written "0"), we can then check whether Brainy made the correct prediction. If Brainy is wrong (e.g.: it thought a "0" was a "1"), we make a determination of *how wrong* it was, and then use techniques to adjust Brainy's network of numbers (based on how wrong Brainy was) so that it will do better the next time.
+>
+>This is a delicate process, because we don't want to adjust Brainy's parameters in a way that cause it to predict hand-written 0's better, but make it predict hand-written 1's worse. It must be done in a way that makes ALL predictions better. This "holistic" update technique is called "gradient descent", and its how the network "learns" to make better predictions overall.
 >
 > The key point to understand about training, is that -- during training -- we are still updating the parameters of the network.
 >
@@ -36,11 +40,11 @@ As mentioned, a main benefit of using a MoE model is to only have to use a subse
 But how do you know which experts to choose? Well, maybe you can run all the experts and choose the most confident experts? (i.e.: choose the experts that have a very large dominant probability for a single digit vs the experts that seem 'undecided' with a bunch of probabilities for multiple digits that are close to each other). But this defeats the purpose of saving computation, since it requires that you run them all.
 
 ### Stiiiiir the pile!
-The way it is done in practice is to introduce a new network to the model called a **"Gating Network"**. The gating network's job is to choose which experts should handle a specific input. The important thing to know about the gating network is that it's decisions are **learned** -- just like the experts' parameters are learned. This means, we throw the gating network's parameters onto the same pile of numbers as the expert networks' parameters when doing gradient desecent.
+The way it is done in practice is to introduce a new network to the model called a **"Gating Network"**. The gating network's job is to choose which experts should handle a specific input. The important thing to know about the gating network is that it's decisions are ***learned*** -- just like the experts' parameters are learned. This means, we throw the gating network's parameters onto the same pile of numbers as the expert networks' parameters when doing gradient desecent.
 
-<div style="text-align: center">
+<p align="center">
   <img src="ml-xkcd.png" alt="Brainy">
-</div>
+</p>
 
 Now, we can run the gating network first, get its decision on which experts to use, and run only the top experts (according to the gating network's reccomendation).
 
@@ -73,7 +77,7 @@ After this realization, I decided that the best way to train the experts was to 
 
 Instead of 10 experts, I decided on 6 (my reasoning for 6 was based loosely on the structure of convolutional neural networks (CNNs) -- the state of the art in image recognition). Whether 6 is a good choice for the number of experts remains to be seen.
 
-I will need to test with different values, but I will also take into account that one of the goals of Brainy MoE is to save computation cost -- so I focus on experimenting with low numbers of experts (likely no more than 10).
+I will need to test with different values, but I will also take into account that one of the goals of Brainy MoE is to save computation cost -- so I plan to focus on experimenting with low numbers of experts (likely no more than 10).
 
 #### Training
 So during training, we
@@ -98,18 +102,18 @@ However, this led to another problem:
 - ...but during inference we only select the top k experts...
 - ...how do we know we are not exlcuding experts that were fundamental in recognizing digits?
 
-The reason why we worry about this is that **the model learned to recognize digits using ALL the experts**. However, to save compute cost during inference, we have hamstrung it to only use the top k.
+The reason why we worry about this is that ***the model learned to recognize digits using ALL the experts***. However, to save compute cost during inference, we have hamstrung it to only use the top k.
 
 Wouldn't it make more sense to have the model learn to recognize digits using only the top k experts right from the start?... since in "the real world" (inference time) it won't be able to rely on all the experts.
 
 This is kind of like a parenting argument... If you provide too much help for your kids when they're young, are you denying them the chance to learn how to take care of themselves when that level of assistance is not available?
 
-> NOTE: I will need to test this out with a special version of Brainy MoE. Specifically, I will need to test using only the top k experts in training is better than training with all of them if you plan to do inference only with the top k. So as of now -- while seeming logically plausible -- is not known. Also -- even if it does prove to be true with Brainy MoE, that does not mean it would apply in general to all models utilizing MoE.
+> NOTE: I will need to test this out with a special version of Brainy MoE. Specifically, I will need to test whether using only the top k experts during training is better than training with all of the experts if you plan to do inference only with the top k. However, even if it does prove to be true with Brainy MoE, that does not mean it would apply in general to all models utilizing MoE.
 
 ## Tough Love
 Because of this, I THEN decided -- at first -- to use only the top k experts during both training and inference.
 
-However, this also didn't seem quite right. This meant that -- especially at the start of training -- the model would only get the benefit of optimizing based on the top k experts chosen by the gating network. However -- at the start of training -- **the gating network knows NOTHING**. Its initial selection of "top k" experts is completely random! It may very well be choosing poor experts. I learned that this is a known phenomenon called "The Cold Start Problem", but it is not the only problem.
+However, this also didn't seem quite right. This meant that -- especially at the start of training -- the model would only get the benefit of optimizing based on the top k experts chosen by the gating network. However -- at the start of training -- ***the gating network knows NOTHING***. Its initial selection of "top k" experts is completely random! It may very well be choosing poor experts. I learned that this is a known phenomenon called "The Cold Start Problem", but it is not the only problem.
 
 After some discussion with Claude, I learned of other problems with this approach as well. I've listed a few of these below.
 
@@ -118,7 +122,7 @@ After some discussion with Claude, I learned of other problems with this approac
 - **Expert Collapse**: The model might converge to using only a subset of available experts, effectively reducing model capacity.
 
 # The Final Version
-Well, not the final version, but the final version of MoE Brainy 1.0.0.
+Well, not the final version, but the final version of Braing 2.0.0 (MoE Brainy).
 
 I've decided to take a simple approach that wll hopefully balance the previous two options (which I've re-summarized below)
 
