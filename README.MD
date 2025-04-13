@@ -55,6 +55,8 @@ Another big problem also presented itself right away. Recall that the gating net
 
 For example: If the gating network chooses expert 1, and expert 1 only recognizes 1s... why do we need expert 1? The fact that an expert that only recognizes 1s was selected is equivalent to a prediction of 1 for the current image.
 
+> NOTE: I will need to actually test this to be sure if having 1 expert per digit actually does perform worst than allowing the experts more freedom to learn a specialization. However, I would be very surprised if a system where the gating network actually does most of the work were as good as a system that was able to utilize the experts.
+
 ## Presupposing how to specialize
 But even if we set k to 3 or 6... it still highlights the fact that we seem to now be trying to 'hand code' something that the neural network she be *learning*. We are presupposing what the experts should specialize in. We are presupposing that the best way to recognize digits is to specialize in one digit, not specialize in more general aspects of digits (such as recognizing curves, straight segments, etc...).
 
@@ -69,7 +71,9 @@ Questions of how to utilize the top k experts during training and inference was 
 ## All the Experts
 After this realization, I decided that the best way to train the experts was to expose all of them to all of the data.
 
-Instead of 10 experts, I decided on 6 (my reasoning for 6 was based loosely on the structure of convolutional neural networks (CNNs) -- the state of the art in image recognition).
+Instead of 10 experts, I decided on 6 (my reasoning for 6 was based loosely on the structure of convolutional neural networks (CNNs) -- the state of the art in image recognition). Whether 6 is a good choice for the number of experts remains to be seen.
+
+I will need to test with different values, but I will also take into account that one of the goals of Brainy MoE is to save computation cost -- so I focus on experimenting with low numbers of experts (likely no more than 10).
 
 #### Training
 So during training, we
@@ -100,10 +104,12 @@ Wouldn't it make more sense to have the model learn to recognize digits using on
 
 This is kind of like a parenting argument... If you provide too much help for your kids when they're young, are you denying them the chance to learn how to take care of themselves when that level of assistance is not available?
 
+> NOTE: I will need to test this out with a special version of Brainy MoE. Specifically, I will need to test using only the top k experts in training is better than training with all of them if you plan to do inference only with the top k. So as of now -- while seeming logically plausible -- is not known. Also -- even if it does prove to be true with Brainy MoE, that does not mean it would apply in general to all models utilizing MoE.
+
 ## Tough Love
 Because of this, I THEN decided -- at first -- to use only the top k experts during both training and inference.
 
-However, this also didn't seem quite right. This meant that -- especially at the start of training -- the model would only get the benefit of optimizing based on the top k experts chosen by the gating network. However -- at the start of training -- **the gating network knows NOTHING**. Its initial selection of "top k" experts is completely random! It may very well be choosing poor experts. I learned that this is a known phenomenon called "The Cold Start Problem"... but it is not the only problem.
+However, this also didn't seem quite right. This meant that -- especially at the start of training -- the model would only get the benefit of optimizing based on the top k experts chosen by the gating network. However -- at the start of training -- **the gating network knows NOTHING**. Its initial selection of "top k" experts is completely random! It may very well be choosing poor experts. I learned that this is a known phenomenon called "The Cold Start Problem", but it is not the only problem.
 
 After some discussion with Claude, I learned of other problems with this approach as well. I've listed a few of these below.
 
