@@ -2,21 +2,27 @@ import torch
 import torch.nn as nn
 import torchvision
 import PIL.Image as Image
+from pyarrow.compute import top_k_unstable
+from sympy.strategies.branch.traverse import top_down
 from torch.utils.data import DataLoader
 from torchvision.datasets import MNIST
 import string
 from typing import List
 from typing import Tuple
 
-# THE EXPERT MODEL
-# Defines the forward pass (training / inference)
-# Inherits from torch.nn.Module
-# NOTE: Instantiate the mode with
-#   expert = Expert().to(device) # puts this on GPU if available
-# Calling
-#   outputs = expert(inputs)
-# wil automatically run the forward pass
-# Do not call forward() directly
+from transformers.models.superpoint.modeling_superpoint import top_k_keypoints
+
+
+# THE EXPERT NETWORK
+# - Defines the forward pass (training / inference)
+# - Inherits from torch.nn.Module
+# - NOTE: Instantiate the model with
+#     expert = Expert().to(device) # puts this on GPU
+# - Calling
+#     outputs = expert(inputs)
+#   will automatically run the forward pass
+# - Do not call forward() directly
+#   - forward() is called on all images of a mini_batch
 #
 # The Expert class
 #   The Expert class defines a neural network model that consists of two fully connected layers.
@@ -56,19 +62,19 @@ class Expert(nn.Module):
         # the size -1 is inferred from other dimensions
         # z is a tensor with size (2, 8). z shares data with x
         #
-        x = x.view(-1, INPUT_SIZE)  # Flatten the image
+        x = x.view(-1, INPUT_SIZE)  # Flatten the image -> [1, 784]
 
         # Apply the first fully connected layer and ReLU (or GReLU) activation function
-        x = self.fc1(x)
-        x = torch.relu(x)
+        x = self.fc1(x)     # -> [1, 500]
+        x = torch.relu(x)   # -> [1, 500]
 
         # Do calcs for hidden->output layers
         # We don't apply activation in the fc network containing the output layer since it
         # will be included in the loss function (specifically: cross entropy loss)
-        x = self.fc2(x)
+        x = self.fc2(x)     # -> [1, 10]
 
-        # Return the logit (unactivated output)
-        return x
+        # Return the "logit" (non-softmax'd probability distribution over 10 digits)
+        return x    # [1, 10]
 
 # THE GATING MODEL
 # Defines the forward pass (training / inference)
@@ -213,10 +219,193 @@ def train():
 
     # Train the mixture of experts
     train_mixture_of_experts(
-        device, experts, gating_network, loss_ftn, optimizer, training_minibatch_loader, epochs=EPOCHS)
+        device, experts, gating_network, loss_ftn, optimizer, training_minibatch_loader,
+        epochs=EPOCHS, num_experts=NUM_EXPERTS, top_k=TOP_K)
 
     # Save models
     save_models(experts, gating_network)
+
+# def train_mixture_of_experts(
+#     device: torch.device,
+#     experts: List[nn.Module],
+#     gating_network: torch.nn.Module,
+#     loss_ftn: torch.nn.CrossEntropyLoss,
+#     optimizer: torch.optim.Optimizer,
+#     training_minibatch_loader: torch.utils.data.DataLoader,
+#     epochs: int,
+#     num_experts: int,
+#     top_k: int):
+#
+#     current_top_k: int
+#     for epoch in range(epochs):
+#         epoch_loss = 0.0
+#         batch_count = 0
+#
+#         current_top_k = max(top_k, num_experts - epoch)     # Decrease top_k each epoch until reaching TOP_K
+#         print(f'Epoch {epoch + 1}, using top-{current_top_k} experts')
+#
+#         for image_minibatch, label_minibatch in training_minibatch_loader:
+#             # Move data to device
+#             image_minibatch = image_minibatch.to(device)
+#             label_minibatch = label_minibatch.to(device)
+#
+#             # Zero gradients
+#             optimizer.zero_grad()
+#
+#             # Forward pass through gating network
+#             gating_outputs = gating_network(image_minibatch) # Shape [mini_batch_size, num_experts]
+#
+#             # Get top k experts using current_top_k
+#             _, top_k_indices = torch.topk(gating_outputs, current_top_k, dim=1)
+#
+#             # Create mask for top k experts
+#             mask = torch.zeros_like(gating_outputs)
+#             ones = torch.ones_like(top_k_indices, dtype=mask.dtype)
+#             mask.scatter_(dim=1, index=top_k_indices, src=ones)
+#
+#             #### TOP_K EXPERTS ####
+#
+#             # Renormalize gating output to sum to 1 for the top current_top_k experts
+#             gating_outputs = gating_outputs * mask  # Zero out non-top-k expert weights - pairwise multiplication
+#             gating_outputs = gating_outputs / gating_outputs.sum(dim=1, keepdim=True) # Renormalize gating weights to sum to 1
+#
+#             # Initialize a list to hold the outputs from each expert for each image
+#             expert_outputs_list = []
+#
+#             ####################
+#
+#             # Get top k experts for each image based on the gating network's probability distribution
+#             # - gating_outputs: [mini_batch_size, num_experts]
+#             _, top_k_indices = torch.topk(input=gating_outputs, k=TOP_K, dim=1)
+#
+#             # Create mask for top k experts
+#             mask = torch.zeros_like(gating_outputs) # set to 0s
+#             ones = torch.ones_like(top_k_indices, dtype=mask.dtype) # create 1s at top_k_indices indexes
+#             mask.scatter_(dim=1, index=top_k_indices, src=ones) # change mask's 0s to 1s at top_k_indices indexes
+#
+#             # Zero out non-top-k expert weights
+#             gating_outputs = gating_outputs * mask  # pairwise multiplication
+#
+#             # Renormalize gating weights to sum to 1
+#             # Need to do this since we break the softmax normalization by selecting only the top k experts
+#             # - gating_outputs: [mini_batch_size, num_experts]
+#             gating_outputs = gating_outputs / gating_outputs.sum(dim=1, keepdim=True)
+#
+#             #######################
+#
+#
+#             # Initialize a list to hold the outputs from each expert
+#             top_k_expert_outputs_list = []
+#
+#             # Forward pass through experts
+#
+#             # Get outputs from the current_top_k experts using a loop
+#             for i in range(len(experts)):
+#
+#                 # Skip experts that are not in the top k
+#                 if mask[i] == 0:
+#                     continue
+#
+#                 # if
+#                 #   e_i, e_j are top k experts
+#                 # then if
+#                 #   e_i = experts[i] and e_j = experts[j]
+#                 # then if
+#                 #   e_i = expert_outputs[a] and e_j = expert_outputs[b]
+#                 # then
+#                 #   a < b iff i < j
+#
+#                 # Get output for all images in batch from current expert
+#                 top_k_expert_output = experts[i](image_minibatch)  # Shape: [mini_batch_size, num_classes]
+#                 top_k_expert_output = top_k_expert_output.unsqueeze(1)   # Shape: -> [mini_batch_size, expert_index, num_classes]
+#                 top_k_expert_outputs_list.append(top_k_expert_output)
+#
+#             # Concatenate the top k expert outputs along the expert_index dimension
+#             # - this means to expand dim=1 (the expert_index dimension) from a dimension of 1 to a dimension of size TOP_K
+#             # expert_outputs[i][e][d] contains the logit (unactivated output) that expert e predicts for digit class d when looking at image i in the batch
+#             top_k_expert_outputs = torch.cat(top_k_expert_outputs_list, dim=1)  # Shape: [mini_batch_size, num_experts, num_classes]
+#
+#             # Combine outputs
+#             # Shape [mini_batch_size, num_experts]
+#
+#             # Shape [mini_batch_size, num_experts] -> [mini_batch_size, num_experts, 1]
+#             gate_confidence_of_expert_e_for_image_i = gating_outputs.unsqueeze(2)
+#
+#             # [mini_batch_size, num_experts, num_classes] * [mini_batch_size, num_experts, 1]
+#             # Perform element-wise multiplication
+#             #
+#             # expert_outputs: [mini_batch_size, num_experts, num_classes]
+#             # - expert_outputs[i][e][d] = the logit (unactivated output) produced by expert e for digit d in image i
+#             #
+#             # gate_confidence_of_expert_e_for_image_i: [mini_batch_size, num_experts, 1]
+#             # - gate_confidence_of_expert_e_for_image_i[i][e][1]
+#             #
+#             # weighted_expert_outputs[i][e][d]
+#             #   = expert_outputs[i][e][d] * gate_confidence_of_expert_e_for_image_i[i][e][1]
+#             # weighted_expert_outputs: [mini_batch_size, num_experts, num_classes]
+#             #
+#             # This multiplies all 10 logits (one for each digit) produced by expert e for image i by the gating
+#             # network's confidence that expert e is the 'best' expert for image i
+#             #
+#             # For each image i and expert e:
+#             #   - expert_outputs[i][e] is a vector of 10 logits (one for each digit)
+#             #   - gate_confidence_of_expert_e_for_image_i[i][e][0] is a single confidence value
+#             #   - The multiplication broadcasts the confidence value across all 10 logits, scaling each logit by how
+#             #      much the gating network trusts that expert for that image
+#             #
+#             # This weighting means that if the gating network has high confidence in expert e for image i,
+#             # then that expert's predictions will contribute more strongly to the final combined output for that image.
+#             #
+#             # Tensor broadcasting
+#             #   In PyTorch, broadcasting refers to the automatic expansion of tensor dimensions to make them compatible
+#             #   for element-wise operations. In this specific context:
+#             #
+#             #   1. gate_confidence_of_expert_e_for_image_i has shape [mini_batch_size, num_experts, 1]
+#             #   2. expert_outputs has shape [mini_batch_size, num_experts, 10]
+#             #
+#             #   When multiplying these tensors, the 1 in the last dimension of gate_confidence_of_expert_e_for_image_i
+#             #   is automatically "broadcast" (expanded) to match the 10 in expert_outputs. This means:
+#             #
+#             #   1. The single confidence value for each expert/image pair is automatically repeated 10 times
+#             #   2. Each of the 10 logits from an expert for an image is multiplied by the same confidence value
+#             #   3. No additional memory is actually allocated for this expansion
+#             #
+#             #   For example, if we have:
+#             #     gate_confidence_of_expert_e_for_image_i[0][0][0] = 0.7  # confidence for expert 0, image 0
+#             #     expert_outputs[0][0] = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]  # logits for digits 0-9
+#             #
+#             #   The multiplication will effectively do:
+#             #     weighted_outputs[0][0] = [0.1*0.7, 0.2*0.7, 0.3*0.7, 0.4*0.7, 0.5*0.7, 0.6*0.7, 0.7*0.7, 0.8*0.7, 0.9*0.7, 1.0*0.7]
+#             #
+#             weighted_outputs = top_k_expert_outputs * gate_confidence_of_expert_e_for_image_i
+#
+#             # Sum over expert dimension
+#             #
+#             #   # This combines the outputs of all experts for each image + digit
+#             #   For each image i and digit d:
+#             #     combined_outputs[i][d] = Sum[ e = 1..6 ]( weighted_expert_outputs[i][e][d] )
+#             #
+#             combined_outputs = torch.sum(weighted_outputs, dim=1) # Shape [mini_batch_size, num_classes]: (i, d)
+#
+#             # Compute the loss
+#             # - combined_outputs:
+#             #       [mini_batch_size, num_classes] ~ [image_i, digit]
+#             # - labels:
+#             #       [mini_batch_size]              ~ [image_i_label]
+#             loss = loss_ftn(combined_outputs, label_minibatch)
+#
+#             # Accumulate loss for logging
+#             epoch_loss += loss.item()
+#             batch_count += 1
+#
+#             # Backward pass
+#             loss.backward()
+#
+#             # Update weights
+#             optimizer.step()
+#
+#         avg_loss = epoch_loss / batch_count
+#         print(f'Epoch {epoch + 1}, Loss: {avg_loss:.4f}')
 
 def train_mixture_of_experts(
     device: torch.device,
@@ -225,25 +414,22 @@ def train_mixture_of_experts(
     loss_ftn: torch.nn.CrossEntropyLoss,
     optimizer: torch.optim.Optimizer,
     training_minibatch_loader: torch.utils.data.DataLoader,
-    epochs):
-
-    # TODO
-    # Start with all experts (NUM_EXPERTS)
-    current_top_k = NUM_EXPERTS
+    epochs: int,
+    num_experts: int,
+    top_k: int):
 
     for epoch in range(epochs):
         epoch_loss = 0.0
         batch_count = 0
 
-        # TODO
-        # Decrease top_k each epoch until reaching TOP_K
-        current_top_k = max(TOP_K, NUM_EXPERTS - epoch)
+        current_top_k = max(top_k, num_experts - epoch)  # Decrease top_k each epoch until reaching TOP_K
         print(f'Epoch {epoch + 1}, using top-{current_top_k} experts')
 
         for image_minibatch, label_minibatch in training_minibatch_loader:
             # Move data to device
-            image_minibatch = image_minibatch.to(device)
-            label_minibatch = label_minibatch.to(device)
+            image_minibatch = image_minibatch.to(device) # [MINI_BATCH_SIZE, 1, IMAGE_WIDTH, IMAGE_HEIGHT]
+            label_minibatch = label_minibatch.to(device) # [MINI_BATCH_SIZE]
+            mini_batch_size = image_minibatch.size(dim=0) # size of dim=0 which is MINI_BATCH_SIZE
 
             # Zero gradients
             optimizer.zero_grad()
@@ -251,116 +437,99 @@ def train_mixture_of_experts(
             # Forward pass through gating network
             gating_outputs = gating_network(image_minibatch) # Shape [mini_batch_size, num_experts]
 
-            # TODO
             # Get top k experts using current_top_k
-            _, top_k_indices = torch.topk(gating_outputs, current_top_k, dim=1)
-            mask = torch.zeros_like(gating_outputs)
-            mask.scatter_(1, top_k_indices, 1)
+            _, top_k_indices = torch.topk(input=gating_outputs, k=current_top_k, dim=1)
 
-            #### TOP_K EXPERTS ####
+            # The shape of top_k_indices is [mini_batch_size, current_top_k]
 
-            # Get top k experts for each image based on the gating network's probability distribution
-            # - gating_outputs: [mini_batch_size, num_experts]
-            _, top_k_indices = torch.topk(gating_outputs, TOP_K, dim=1)
-            
             # Create mask for top k experts
-            mask = torch.zeros_like(gating_outputs)
-            mask.scatter_(1, top_k_indices, 1)
-            
+            mask = torch.zeros_like(gating_outputs) # Shape [mini_batch_size, num_experts]
+            mask.scatter_(dim=1, index=top_k_indices, value=1.0) # Shape [mini_batch_size, num_experts]
+
             # Zero out non-top-k expert weights
             gating_outputs = gating_outputs * mask
-            
-            # Renormalize gating weights to sum to 1
-            # Need to do this since we break the softmax normalization by selecting only the top k experts
-            # - gating_outputs: [mini_batch_size, num_experts]
-            gating_outputs = gating_outputs / gating_outputs.sum(dim=1, keepdim=True)
 
-            #######################
+            # sum all values along dim=1 (the experts dimension) for each sample in the batch
+            # keepdim=True preserves the dimensionality, resulting in shape [mini_batch_size, 1]
+            gating_outputs_sum = gating_outputs.sum(dim=1, keepdim=True) # Shape [mini_batch_size, 1]
 
+            # renormalize gating_outputs to ensure the gating weights for the top-k experts sum to 1
+            # for each sample in the mini batch
 
-            # Initialize a list to hold the outputs from each expert
-            expert_outputs_list = []
+            # [mini_batch_size, num_experts] / [mini_batch_size, 1]
+            # broadcast the second dimension of gating_outputs_sum from 1 to num_experts
+            # by repeating the value in dim=1 num_experts times
+            gating_outputs_k = gating_outputs / gating_outputs_sum # Shape [mini_batch_size, num_experts]
 
-            # Forward pass through experts
+            # Initialize tensor to hold all expert outputs
+            # The shape of e_outputs is [mini_batch_size, num_experts, 10]
+            e_outputs = torch.zeros(mini_batch_size, num_experts, 10).to(device)  # 10 classes for MNIST
 
-            # Get outputs from all experts using a loop
-            # expert_outputs_list = [expert(images).unsqueeze(1) for expert in experts]
-            for i in range(len(experts)):
-                # Get output for all images in batch from current expert
-                expert_output = experts[i](image_minibatch)  # Shape: [mini_batch_size, num_classes]
-                expert_output = expert_output.unsqueeze(1)  # Shape: [mini_batch_size, 1, num_classes]
-                expert_outputs_list.append(expert_output)
+            # For each expert, find which images need it
+            for e in range(num_experts):
+                # Find images that selected this expert in their top-k
 
-            # Concatenate all expert outputs along the expert dimension
-            # - this means to expand dim=1 (the expert dimension) from a dimension of 1 to a dimension of size NUM_EXPERTS
-            # expert_outputs[i][e][d] contains the logit (unactivated output) that expert e predicts for digit class d when looking at image i in the batch
-            expert_outputs = torch.cat(expert_outputs_list, dim=1)  # Shape: [mini_batch_size, num_experts, num_classes]
+                '''
+                This line is identifying which images in the batch need to be processed by the current expert e.
+                                
+                1. mask is a tensor of shape [mini_batch_size, num_experts] where each element is either 0 or 1:                            
+                
+                  - If mask[i, e] = 1, image i selected expert e in its top-k
+                  - If mask[i, e] = 0, image i did not select expert e in its top-k
+                
+                2. mask[:, e] selects the column for the current expert e, giving a 1D tensor of shape
+                   [mini_batch_size]. This contains 1s for images that need this expert and 0s otherwise.                
+                
+                3. .nonzero() returns the indices where the value is non-zero (i.e., equal to 1). This gives a
+                   2D tensor of shape [num_images_needing_expert, 1] where each row contains an index.
+                                
+                4. .squeeze(dim=1) removes the second dimension (which is just a singleton dimension),
+                   resulting in a 1D tensor of shape [num_images_needing_expert] containing the indices of
+                   images that need expert e.                
+                
+                This approach is efficient because it allows the model to only run each expert on the subset of
+                images that actually selected that expert in their top-k, rather than running every expert on
+                every image.                
+                '''
+                indexes_of_images_needing_expert_e = mask[:, e].nonzero().squeeze(dim=1)
 
-            # Combine outputs
-            # Shape [mini_batch_size, num_experts] -> [mini_batch_size, num_experts, 1]
-            gate_confidence_of_expert_e_for_image_i = gating_outputs.unsqueeze(2)
+                # Only process if at least one image needs this expert
+                if len(indexes_of_images_needing_expert_e) > 0:
+                    # Create mini-batch of just those images
+                    e_minibatch = image_minibatch[indexes_of_images_needing_expert_e]
 
-            # [mini_batch_size, num_experts, num_classes] * [mini_batch_size, num_experts, 1]
-            # Perform element-wise multiplication
-            #
-            # expert_outputs: [mini_batch_size, num_experts, num_classes]
-            # - expert_outputs[i][e][d] = the logit (unactivated output) produced by expert e for digit d in image i
-            #
-            # gate_confidence_of_expert_e_for_image_i: [mini_batch_size, num_experts, 1]
-            # - gate_confidence_of_expert_e_for_image_i[i][e][1]
-            #
-            # weighted_expert_outputs[i][e][d]
-            #   = expert_outputs[i][e][d] * gate_confidence_of_expert_e_for_image_i[i][e][1]
-            # weighted_expert_outputs: [mini_batch_size, num_experts, num_classes]
-            #
-            # This multiplies all 10 logits (one for each digit) produced by expert e for image i by the gating
-            # network's confidence that expert e is the 'best' expert for image i
-            #
-            # For each image i and expert e:
-            #   - expert_outputs[i][e] is a vector of 10 logits (one for each digit)
-            #   - gate_confidence_of_expert_e_for_image_i[i][e][0] is a single confidence value
-            #   - The multiplication broadcasts the confidence value across all 10 logits, scaling each logit by how
-            #      much the gating network trusts that expert for that image
-            #
-            # This weighting means that if the gating network has high confidence in expert e for image i,
-            # then that expert's predictions will contribute more strongly to the final combined output for that image.
-            #
-            # Tensor broadcasting
-            #   In PyTorch, broadcasting refers to the automatic expansion of tensor dimensions to make them compatible
-            #   for element-wise operations. In this specific context:
-            #
-            #   1. gate_confidence_of_expert_e_for_image_i has shape [mini_batch_size, num_experts, 1]
-            #   2. expert_outputs has shape [mini_batch_size, num_experts, 10]
-            #
-            #   When multiplying these tensors, the 1 in the last dimension of gate_confidence_of_expert_e_for_image_i
-            #   is automatically "broadcast" (expanded) to match the 10 in expert_outputs. This means:
-            #
-            #   1. The single confidence value for each expert/image pair is automatically repeated 10 times
-            #   2. Each of the 10 logits from an expert for an image is multiplied by the same confidence value
-            #   3. No additional memory is actually allocated for this expansion
-            #
-            #   For example, if we have:
-            #     gate_confidence_of_expert_e_for_image_i[0][0][0] = 0.7  # confidence for expert 0, image 0
-            #     expert_outputs[0][0] = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]  # logits for digits 0-9
-            #
-            #   The multiplication will effectively do:
-            #     weighted_outputs[0][0] = [0.1*0.7, 0.2*0.7, 0.3*0.7, 0.4*0.7, 0.5*0.7, 0.6*0.7, 0.7*0.7, 0.8*0.7, 0.9*0.7, 1.0*0.7]
-            #
-            weighted_outputs = expert_outputs * gate_confidence_of_expert_e_for_image_i
+                    # Run expert on just those images
+                    outputs = experts[e](e_minibatch)
 
-            # Sum over expert dimension
-            #
-            #   # This combines the outputs of all experts for each image + digit
-            #   For each image i and digit d:
-            #     combined_outputs[i][d] = Sum[ e = 1..6 ]( weighted_expert_outputs[i][e][d] )
-            #
-            combined_outputs = torch.sum(weighted_outputs, dim=1) # Shape [mini_batch_size, num_classes]: (i, d)
+                    '''
+                    Place outputs in the correct positions in our result tensor
+                    Code below is equivalent to:
+
+                    # For each image that needs this expert
+                    # e_outputs Shape: [mini_batch_size, num_experts, 10]
+                    # e_outputs[i, j] Shape: [10]
+                    # e_outputs is initially fully zeroed
+
+                    outputs has shape [num_images_needing_expert_e, 10]
+                    outputs[i] has shape [10]
+
+                    for i, image in enumerate(indexes_of_images_needing_expert_e):
+                        # Place the output for this image at the correct position in e_outputs
+                        e_outputs[image, e] = outputs[i]
+                    '''
+                    e_outputs[indexes_of_images_needing_expert_e, e] = outputs
+
+            # Weight and combine outputs
+            gate_confidence = gating_outputs_k.unsqueeze(2)  # Shape: [mini_batch_size, num_experts] -> [batch_size, num_experts, 1]
+
+            # [mini_batch_size, num_experts, 10] x [mini_batch_size, num_experts, 1] = [mini_batch_size, num_experts, 10]
+            # weighted_outputs(i, e, d) = gate_conf(i, e, 1) * e_outputs(i, e, d)
+            weighted_outputs = gate_confidence * e_outputs
+
+            # [i, d] = +(i, e=*, d)
+            combined_outputs = torch.sum(weighted_outputs, dim=1)  # Shape: [batch_size, num_classes]
 
             # Compute the loss
-            # - combined_outputs:
-            #       [mini_batch_size, num_classes] ~ [image_i, digit]
-            # - labels:
-            #       [mini_batch_size]              ~ [image_i_label]
             loss = loss_ftn(combined_outputs, label_minibatch)
 
             # Accumulate loss for logging
