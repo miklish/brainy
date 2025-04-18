@@ -1,6 +1,9 @@
 .idea/
 .streamlit/
 __pycache__/
+.ipynb_checkpoints/
+158bit_digit_recognition.ipynb
+models/
 brainy02.webp
 brainy03.webp
 data/
