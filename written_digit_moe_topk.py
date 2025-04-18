@@ -162,10 +162,10 @@ def enable_cuda() -> torch.device:
     return device
 
 def get_device_experts_gate_transform(is_test: bool) -> Tuple [
-        torch.device,
-        List[torch.nn.Module],
-        torch.nn.Module,
-        torchvision.transforms.Compose]:
+    torch.device,
+    List[torch.nn.Module],
+    torch.nn.Module,
+    torchvision.transforms.Compose]:
 
     # Enable GPU if available
     device = enable_cuda()
@@ -175,15 +175,10 @@ def get_device_experts_gate_transform(is_test: bool) -> Tuple [
     gating_network: nn.Module
     if is_test:
         # Load models (for inference)
-        experts, gating_network = load_models(device, INPUT_SIZE, NUM_EXPERTS)
+        experts, gating_network = load_models(INPUT_SIZE, NUM_EXPERTS, device)
     else:
-        experts = [Expert(INPUT_SIZE) for _ in range(NUM_EXPERTS)]
-        gating_network = GatingNetwork(INPUT_SIZE, NUM_EXPERTS)
-
-    # Move models to GPU
-    # Move models to device
-    gating_network = gating_network.to(device)
-    experts = [expert.to(device) for expert in experts]
+        # load models for training
+        experts, gating_network = load_blank_models(INPUT_SIZE, NUM_EXPERTS, device)
 
     # Define a transform to convert the data to tensor
     transform = torchvision.transforms.Compose([torchvision.transforms.ToTensor()])
@@ -730,7 +725,7 @@ def save_models(experts, gating_network, save_dir='./models'):
 
     print(f'Models saved to {save_dir}')
 
-def load_models(device, input_size, num_experts, save_dir='./models'):
+def load_models(input_size, num_experts, device, save_dir='./models'):
     # Create new model instances
     gating_network = GatingNetwork(input_size, num_experts)
     experts = [Expert(input_size) for _ in range(num_experts)]
@@ -744,6 +739,16 @@ def load_models(device, input_size, num_experts, save_dir='./models'):
         experts[i] = experts[i].to(device)
 
     print(f'Models loaded from {save_dir}')
+    return experts, gating_network
+
+def load_blank_models(input_size, num_experts, device):
+    experts = [Expert(input_size) for _ in range(num_experts)]
+    gating_network = GatingNetwork(input_size, num_experts)
+
+    # Move models to GPU
+    gating_network = gating_network.to(device)
+    experts = [expert.to(device) for expert in experts]
+
     return experts, gating_network
 
 ########################################################################################################################
