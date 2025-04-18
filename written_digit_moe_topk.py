@@ -2,16 +2,11 @@ import torch
 import torch.nn as nn
 import torchvision
 import PIL.Image as Image
-from pyarrow.compute import top_k_unstable
-from sympy.strategies.branch.traverse import top_down
 from torch.utils.data import DataLoader
 from torchvision.datasets import MNIST
 import string
 from typing import List
 from typing import Tuple
-
-from transformers.models.superpoint.modeling_superpoint import top_k_keypoints
-
 
 # THE EXPERT NETWORK
 # - Defines the forward pass (training / inference)
