@@ -1,5 +1,5 @@
 # Brainy
-## A Simple Deep Learning Mixture-of-Experts Hand-written Digit Image Classifier
+### A Simple Deep Learning Mixture-of-Experts Hand-written Digit Image Classifier
 
 <p align="center">
   <img src="brainy01.webp" alt="Brainy" style="width: 640px;">
