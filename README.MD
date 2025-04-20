@@ -1,5 +1,4 @@
-# Brainy
-Brainy isn't too smart yet
+# Brainy - : A Deep Learning Mixture-of-Experts Hand-written Digit Image Classifier
 
 <p align="center">
   <img src="brainy01.webp" alt="Brainy" style="width: 640px;">
