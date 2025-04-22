@@ -1,7 +1,10 @@
 .idea/
 .streamlit/
 __pycache__/
-.ipynb_checkpoints/
+.ipynb_checkpoints
+Tensor Masking Operations-old2.ipynb
+Tensor_Masking_Operations-old1.ipynb
+Brainy MoE Training Algo Notes.ipynb
 158bit_digit_recognition.ipynb
 models/
 brainy02.webp
