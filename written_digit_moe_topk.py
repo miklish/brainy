@@ -596,14 +596,28 @@ MINI_BATCH_SIZE = 64
 IMAGE_WIDTH = 28
 IMAGE_HEIGHT = 28
 INPUT_SIZE = IMAGE_WIDTH * IMAGE_HEIGHT
-MODEL_VERSION = "1.0.0.k"
-TOP_K = 3
+
+# 0 = train and test
+# 1 = test
+# 2 = inference
+run = 0
 
 def main():
-    test()
+    if NUM_EXPERTS < 1 or TOP_K < 1 or TOP_K > NUM_EXPERTS:
+        print("Invalid configuration. Ensure NUM_EXPERTS >= 1 and 1 <= TOP_K <= NUM_EXPERTS.")
+        return
 
-# def main():
-#     train()
+    if run == 0:
+        show("training", train)
+        show("testing", test)
+    elif run == 1:
+        show("testing", test)
+    test()
+    elif run == 2:
+        show("inference", inference)
+    else:
+        print("Invalid run option. Use 0 for training or 1 for inference.")
+        return
 
 if __name__ == "__main__":
     main()
