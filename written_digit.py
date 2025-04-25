@@ -132,7 +132,7 @@ def test(testloader: torch.utils.data.DataLoader, model: torch.nn.Module, device
             correct += (predicted == labels.to(device)).sum().item()
 
     # print accuracy of the model
-    print('Accuracy of the network on the 10000 test images: %d %%' % (100 * correct / total))
+    print('Accuracy of the network on the 10000 test images: %.2f %%' % (100 * correct / total))
 
 def train_run_test():
     transform: torchvision.transforms.Compose
