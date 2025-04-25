@@ -587,12 +587,21 @@ def load_blank_models(
 
 ########################################################################################################################
 
+def show(name, ftn):
+    print(name + "...")
+    ftn()
+    print("done.")
+
+########################################################################################################################
+
 # Hyperparameters
+MODEL_VERSION = "1.0.5.k"
 NUM_EXPERTS = 6
+TOP_K = 3
 GATING_HIDDEN_LAYER_SIZE = 64
-LEARNING_RATE = 0.01
-EPOCHS = 5
-MINI_BATCH_SIZE = 64
+LEARNING_RATE = 0.05
+EPOCHS = 10
+MINI_BATCH_SIZE = 16
 IMAGE_WIDTH = 28
 IMAGE_HEIGHT = 28
 INPUT_SIZE = IMAGE_WIDTH * IMAGE_HEIGHT
@@ -612,7 +621,7 @@ def main():
         show("testing", test)
     elif run == 1:
         show("testing", test)
-    test()
+        test()
     elif run == 2:
         show("inference", inference)
     else:
