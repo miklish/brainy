@@ -75,7 +75,7 @@ def train(
 
     # TRAIN
     # Loop over the entire dataset (an epoch) multiple times (multiple epochs)
-    for epoch in range(1):
+    for epoch in range(10):
         # For each mini-batch of images and labels...
         # this gives us the 'stocahstic' part of 'stochastic gradient descent'... its the random selection of mini-batches
         # due to the "shuffle=True" parameter in the DataLoader
