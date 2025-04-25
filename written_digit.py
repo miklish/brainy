@@ -164,7 +164,7 @@ def train_run_test():
     # Define the loss function and the optimizer
     # CrossEntropyLoss is standard for classification problems
     criterion = torch.nn.CrossEntropyLoss()
-    optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.05)
 
     train(device, optimizer, model, criterion, trainloader)
 
