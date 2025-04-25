@@ -1,30 +1,8 @@
 .idea/
-.streamlit/
-__pycache__/
-.ipynb_checkpoints
-Tensor Masking Operations-old2.ipynb
-Tensor_Masking_Operations-old1.ipynb
-Brainy MoE Training Algo Notes.ipynb
-158bit_digit_recognition.ipynb
-models/
-brainy02.webp
-brainy03.webp
+.venv/
 data/
-default.sqlite
-digit0.png
-digit1.png
-digit2.png
-digit7.png
-gd.py
-gd2.py
-gd4.py
-liv.py
-main.py
-mmm.py
-model_weights-1.0.1.pth
-model_weights-1.0.2.pth
-nn01.py
-openai-env/
-ppinion.py
-torch-cuda.py
-utils.py
+models/
+__pycache__/
+.ipynb_checkpoints/
+model_weights.pth
+model_weights-1.0.0.pth
