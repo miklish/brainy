@@ -155,7 +155,7 @@ def train_run_test():
     # Apply the transform when loading the data
     trainset = torchvision.datasets.MNIST(root='./data', train=True, download=True, transform=transform)
     # DataLoader loads data in batches, shuffles it and parallelize the loading process
-    trainloader = torch.utils.data.DataLoader(trainset, batch_size=64, shuffle=True)
+    trainloader = torch.utils.data.DataLoader(trainset, batch_size=16, shuffle=True)
 
     # Create an instance of the model
     device = enable_cuda()      # Enable a GPU acceleration device if available
