@@ -240,11 +240,20 @@ def train_mixture_of_experts(
     num_experts: int,
     top_k: int):
 
+    current_top_k: int
+    epochs = max(epochs, top_k)
+
     for epoch in range(epochs):
         epoch_loss = 0.0
         batch_count = 0
+        epochs_left = epochs - epoch
 
-        current_top_k = max(top_k, num_experts - epoch)  # Decrease current_top_k each epoch until reach TOP_K
+        if epochs_left >= num_experts:
+            current_top_k = num_experts
+        else:
+            # Decrease current_top_k each epoch until reach TOP_K
+            current_top_k = max(top_k, epochs_left)
+
         print(f'Epoch {epoch + 1}, using top-{current_top_k} experts')
 
         for image_minibatch, label_minibatch in training_minibatch_loader:
