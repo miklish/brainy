@@ -197,16 +197,16 @@ def inference(model_weights_file: str, image_tensor: torch.Tensor):
 
 ######
 
-# if __name__ == "__main__":
-#     model: torch.nn.Module = train_run_test()
-#     torch.save(model.state_dict(), 'model_weights.pth')
+if __name__ == "__main__":
+    model: torch.nn.Module = train_run_test()
+    torch.save(model.state_dict(), 'model_weights.pth')
 
 # if __name__ == "__main__":
 #     inference('model_weights.pth')
 
-if __name__ == "__main__":
-    image_tensor: torch.Tensor = load_image('digit.png')
-    inference('model_weights.pth', image_tensor)
+# if __name__ == "__main__":
+#     image_tensor: torch.Tensor = load_image('digit.png')
+#     inference('model_weights.pth', image_tensor)
 
 # if __name__ == "__main__":
 #     compare_mnist_user_imgs()
