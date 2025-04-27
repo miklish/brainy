@@ -19,14 +19,17 @@ import os
 # The Expert class
 #   The Expert class defines a neural network model that consists of two fully connected layers.
 # Initialization
-#   - fc1: The first fully connected layer, takes an input of size 28*28 (flattened image) and outputs 500 nodes.
-#   - fc2: The second fully connected layer, takes the 500 nodes from fc1 and outputs 1 node.
+#   - fc1: The first fully connected layer, takes an input of size INPUT_SIZE (flattened image) and
+#          outputs EXPERT_HIDDEN_LAYER_SIZE nodes.
+#   - fc2: The second fully connected layer, takes the EXPERT_HIDDEN_LAYER_SIZE nodes from fc1 and
+#          outputs a tensor of shape [MINI_BATCH_SIZE, NUM_CLASSES].
 # Forward Pass (forward method)
-#   - Flattening: The input image is flattened from a 2D tensor of size 28*28 to a 1D tensor of size 784.
+#   - Flattening: The input image is flattened from a tensor of [MINI_BATCH_SIZE, CHANNELS, IMAGE_WIDTH, IMAGE_HEIGHT]
+#     to a 1D tensor of size [MINI_BATCH_SIZE, CHANNELS * IMAGE_WIDTH * IMAGE_HEIGHT] = [MINI_BATCH_SIZE, INPUT_SIZE]
 #   - First Layer: The flattened input is passed through the first fully connected layer (fc1) and a ReLU activation function.
 #   - Second Layer: The output of the first layer is passed through the second fully connected layer (fc2).
 # Output
-#   The output of the Expert class are 10 'logits' (unactivated output) for each input image.
+#   The output of the Expert class are NUM_CLASSES 'logits' (unactivated output) for each input image.
 #
 class Expert(nn.Module):
     def __init__(self, input_size: int, expert_hidden_layer_size: int, num_classes: int):
@@ -37,14 +40,14 @@ class Expert(nn.Module):
         self.num_classes = num_classes
 
         # Create the first fully connected layers (input->hidden layer)
-        # Input layer is 28x28 inputs nodes (image size) and output layer is 500 nodes
+        # Input layer is INPUT_SIZE inputs nodes (image size) and output layer is EXPERT_HIDDEN_LAYER nodes
         self.fc1 = torch.nn.Linear(self.input_size, self.expert_hidden_layer_size)
         # Create the second fully connected layer (hidden->output layer)
-        # This layer has 500 input nodes and 10 output nodes (for 10 digits classes)
+        # This layer has EXPERT_HIDDEN_LAYER input nodes and NUM_CLASSES output nodes (for EXPERT_HIDDEN_LAYER object classes)
         self.fc2 = torch.nn.Linear(self.expert_hidden_layer_size, self.num_classes)
 
     def forward(self, x):
-        # Flatten the input image from 28*28 to a 1D tensor of size 784 (28*28)
+        # Flatten from [MINI_BATCH_SIZE, CHANNELS, IMAGE_WIDTH, IMAGE_HEIGHT] -> [MINI_BATCH_SIZE, INPUT_SIZE]
         #
         # Some details of the pytorch API:
         # The `x.view()` function reshapes tensors
@@ -58,11 +61,11 @@ class Expert(nn.Module):
         # the size -1 is inferred from other dimensions
         # z is a tensor with size (2, 8). z shares data with x
         #
-        x = x.view(-1, self.input_size)  # Flatten the image -> [MINI_BATCH_SIZE, 784]
+        x = x.view(-1, self.input_size)  # Flatten the image -> [MINI_BATCH_SIZE, INPUT_SIZE]
 
         # Apply the first fully connected layer and ReLU (or GReLU) activation function
-        x = self.fc1(x)     # -> [MINI_BATCH_SIZE, 500]
-        x = torch.relu(x)   # -> [MINI_BATCH_SIZE, 500]
+        x = self.fc1(x)     # -> [MINI_BATCH_SIZE, EXPERT_HIDDEN_LAYER_SIZE]
+        x = torch.relu(x)   # -> [MINI_BATCH_SIZE, EXPERT_HIDDEN_LAYER_SIZE]
 
         # Do calcs for hidden->output layers
         # We don't apply activation in the fc network containing the output layer since it
@@ -103,12 +106,12 @@ class Expert(nn.Module):
 #
 # GatingNetwork class
 #   This class initializes two fully connected layers:
-#     - fc1: Takes the flattened input image (size 28*28) and outputs GATING_HIDDEN_LAYER_SIZE nodes
+#     - fc1: Takes the flattened input image (size INPUT_SIZE) and outputs GATING_HIDDEN_LAYER_SIZE nodes
 #     - fc2: Takes the GATING_HIDDEN_LAYER_SIZE nodes from fc1 and outputs a "logit" for each expert
 #       (NUM_EXPERTS experts in this case) for each class (NUM_CLASSES classes)
 #
 # Forward Pass (forward method):
-#   The input image is flattened into a 1D tensor of size 28*28.
+#   The input image is flattened into a 1D tensor of size INPUT_SIZE (CHANNELS * IMAGE_WIDTH * IMAGE_HEIGHT).
 #   The flattened image is passed through the first fully connected layer (fc1) and a ReLU activation function.
 #   The output of fc1 is passed through the second fully connected layer (fc2).
 #   The output of fc2 is passed through a softmax function to produce a probability distribution over experts
@@ -145,7 +148,7 @@ class GatingNetwork(nn.Module):
         self.num_experts = num_experts
 
         # Create the first fully connected layers (input->hidden layer)
-        # Input layer is 28x28 inputs nodes (image size) and output layer is GATING_HIDDEN_LAYER_SIZE nodes
+        # Input layer is INPUT_SIZE inputs nodes (image size) and output layer is GATING_HIDDEN_LAYER_SIZE nodes
         self.fc1 = nn.Linear(self.input_size, self.gating_hidden_layer_size)
 
         # Second fully connected layer: creates probability distribution over experts
@@ -367,99 +370,6 @@ def train_mixture_of_experts(
 
         avg_loss = epoch_loss / batch_count
         print(f'Epoch {epoch + 1}, Loss: {avg_loss:.4f}')
-
-########################################################################################################################
-
-# # loads user-created image from disk and converts it to a tensor
-# def load_image(image_path: string) -> torch.Tensor:
-#     image: Image = Image.open(image_path)
-#
-#     # Extract the alpha channel (handles transparency correctly)
-#     if image.mode == "RGBA":
-#         _, _, _, image = image.split()  # Get the alpha channel and use as the black-and-white image
-#
-#     # Convert to grayscale explicitly (ensures it's in single-channel format)
-#     image = image.convert("L")
-#
-#     # Apply thresholding to enforce black (0) and white (255)
-#     image = image.point(lambda p: 255 if p > 128 else 0)
-#
-#     # Define the transform: Convert to tensor and normalize to [0,1] (default for ToTensor)
-#     transform = torchvision.transforms.ToTensor()
-#
-#     # Apply the transformation
-#     tensor_image = transform(image)  # Shape: [1, 28, 28]
-#
-#     return tensor_image
-#
-# def inference():
-#     # Load the image
-#     image_path = input("Enter the path to the image: ")
-#     image_tensor = load_image(image_path)
-#
-#     # Get models and device
-#     device, experts, gating_network, _ = get_device_experts_gate_transform(is_test=True)
-#
-#     # Perform inference
-#     inference_run(image_tensor, device, experts, gating_network, TOP_K)
-#
-# def inference_run(
-#     image_tensor: torch.Tensor,
-#     device: torch.device,
-#     experts: List[nn.Module],
-#     gating_network: nn.Module,
-#     top_k: int):
-#
-#     # Move image to device and add batch dimension
-#     image_tensor = image_tensor.unsqueeze(0)  # Shape: [1, 1, 28, 28]
-#     image_tensor = image_tensor.to(device)
-#
-#     predicted_digit: int
-#
-#     # Disable gradient computation for inference
-#     with torch.no_grad():
-#         # Get gating outputs
-#         gating_outputs = gating_network(image_tensor)  # [1, num_experts]
-#
-#
-#         #### TOP_K EXPERTS ####
-#
-#         # Get indices of top k experts
-#         top_k_values, top_k_indices = torch.topk(gating_outputs, top_k, dim=1)  # [1, top_k]
-#
-#         # Only run selected experts
-#         expert_outputs_list = []
-#         for idx in top_k_indices[0]:  # [0] because batch size is 1
-#             expert_output = experts[idx](image_tensor).unsqueeze(1)  # [1, 1, num_classes]
-#             expert_outputs_list.append(expert_output)
-#
-#         # Only combine outputs from selected experts
-#         expert_outputs = torch.cat(expert_outputs_list, dim=1)  # [1, top_k, num_classes]
-#         gating_weights = top_k_values.unsqueeze(2)  # [1, top_k, 1]
-#
-#         # Normalize weights to sum to 1
-#         gating_weights = gating_weights / gating_weights.sum(dim=1, keepdim=True)
-#
-#         #######################
-#
-#
-#         # Weight and combine expert outputs
-#         weighted_outputs = expert_outputs * gating_weights  # [1, top_k, num_classes]
-#
-#         # This is the element-wise multiplication of the expert outputs and the gating weights
-#         # The gating weights are "broadcasted" to match the shape of the expert outputs
-#         # This multiplies the outputs of the selected experts by their respective gating weights
-#         # The result is a tensor where each expert's output is scaled by how much the gating network trusts that expert
-#         # Sum over expert dimension
-#         # This combines the outputs of all experts for each image + digit
-#         combined_outputs = torch.sum(weighted_outputs, dim=1)  # [1, num_classes]
-#
-#         # Get prediction
-#         _, predicted = torch.max(combined_outputs.data, 1)
-#         predicted_digit = predicted.item()
-#
-#     print(f'Predicted digit: {predicted_digit}')
-#     return predicted_digit
 
 ########################################################################################################################
 
