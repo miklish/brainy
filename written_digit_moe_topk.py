@@ -8,6 +8,7 @@ import string
 from typing import List
 from typing import Tuple
 import os
+import platform
 
 # THE EXPERT NETWORK
 # - Defines the forward pass (training / inference)
@@ -166,14 +167,36 @@ class GatingNetwork(nn.Module):
 def enable_cuda() -> torch.device:
     device: torch.device
 
-    # Check if CUDA is available
-    if torch.cuda.is_available():
-        device = torch.device('cuda')
-        print("CUDA Available")
+    if platform.system() == "Darwin":
+        print("macOS detected... Using CPU")
+        device = torch.device('cpu')
+
+        # Mac GPU is slower than CPU
+        # if torch.backends.mps.is_available():
+        #     device = torch.device("mps")
+        #     print("Metal Available")
+        # else:
+        #     device = torch.device('cpu')
+        #     print("Metal device not found.")
+
+    elif platform.system() == "Windows":
+        print("Windows detected... checking for CUDA")
+
+        # Check if CUDA is available
+        if torch.cuda.is_available():
+            torch.cuda.set_device(0)
+            device = torch.device('cuda:0')
+            # device = torch.device('cuda')
+
+            print("CUDA Available")
+            print(f"CUDA device count: {torch.cuda.device_count()}")
+            print(f"Current CUDA device: {torch.cuda.current_device()}")
+            print(f"CUDA device name: {torch.cuda.get_device_name()}")
+        else:
+            device = torch.device('cpu')
+            print("GPU Acceleration Not Available")
     else:
         device = torch.device('cpu')
-        print("GPU Acceleration Not Available")
-    return device
 
 def get_device_experts_gate_transform(is_test: bool) -> Tuple [
     torch.device,
@@ -423,10 +446,10 @@ def inference_run(
         # Only combine outputs from selected experts
         expert_outputs = torch.cat(expert_outputs_list, dim=1)  # [1, top_k, num_classes]
         gating_weights = top_k_values.unsqueeze(2)  # [1, top_k, 1]
-        
+
         # Normalize weights to sum to 1
         gating_weights = gating_weights / gating_weights.sum(dim=1, keepdim=True)
-        
+
         #######################
 
 
@@ -492,7 +515,7 @@ def test_run(
             top_k_values, top_k_indices = torch.topk(gating_outputs, top_k, dim=1)  # [mini_batch_size, top_k]
 
             # Initialize expert outputs tensor
-            expert_outputs = torch.zeros(mini_batch_size, top_k, 10).to(device)  # [mini_batch_size, top_k, num_classes]            
+            expert_outputs = torch.zeros(mini_batch_size, top_k, 10).to(device)  # [mini_batch_size, top_k, num_classes]
 
             # For each image in batch, run only its top k experts
             for image_i in range(mini_batch_size):
