@@ -5,6 +5,8 @@ from torch.utils.data import DataLoader
 from typing import List
 from typing import Tuple
 import os
+import time
+import platform
 
 # THE EXPERT NETWORK
 # - Defines the forward pass (training / inference)
@@ -174,19 +176,37 @@ class GatingNetwork(nn.Module):
 def enable_cuda() -> torch.device:
     device: torch.device
 
-    # Check if CUDA is available
-    if torch.cuda.is_available():
-        torch.cuda.set_device(0)
-        device = torch.device('cuda:0')
-        # device = torch.device('cuda')
+    if platform.system() == "Darwin":
+        print("macOS detected... Using CPU")
+        device = torch.device('cpu')
 
-        print("CUDA Available")
-        print(f"CUDA device count: {torch.cuda.device_count()}")
-        print(f"Current CUDA device: {torch.cuda.current_device()}")
-        print(f"CUDA device name: {torch.cuda.get_device_name()}")
+        # Mac GPU is slower than CPU
+        # if torch.backends.mps.is_available():
+        #     device = torch.device("mps")
+        #     print("Metal Available")
+        # else:
+        #     device = torch.device('cpu')
+        #     print("Metal device not found.")
+
+    elif platform.system() == "Windows":
+        print("Windows detected... checking for CUDA")
+
+        # Check if CUDA is available
+        if torch.cuda.is_available():
+            torch.cuda.set_device(0)
+            device = torch.device('cuda:0')
+            # device = torch.device('cuda')
+
+            print("CUDA Available")
+            print(f"CUDA device count: {torch.cuda.device_count()}")
+            print(f"Current CUDA device: {torch.cuda.current_device()}")
+            print(f"CUDA device name: {torch.cuda.get_device_name()}")
+        else:
+            device = torch.device('cpu')
+            print("GPU Acceleration Not Available")
     else:
         device = torch.device('cpu')
-        print("GPU Acceleration Not Available")
+
     return device
 
 def get_device_experts_gate_transform(is_test: bool) -> Tuple [
@@ -535,6 +555,9 @@ INPUT_SIZE = IMAGE_WIDTH * IMAGE_HEIGHT * CHANNELS
 run = 0
 
 def main():
+    # start timer
+    start_time_millis = time.time_ns() // 1_000_000
+
     if NUM_EXPERTS < 1 or TOP_K < 1 or TOP_K > NUM_EXPERTS:
         print("Invalid configuration. Ensure NUM_EXPERTS >= 1 and 1 <= TOP_K <= NUM_EXPERTS.")
         return
@@ -550,6 +573,8 @@ def main():
     else:
         print("Invalid run option. Use 0 for training or 1 for inference.")
         return
+
+    print(f"total runtime: {(time.time_ns() // 1_000_000) - start_time_millis} ms")
 
 if __name__ == "__main__":
     main()
